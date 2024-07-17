@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Merge YAML Files</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/js-yaml/4.1.0/js-yaml.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/lodash.js/4.17.21/lodash.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.5.0/styles/default.min.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.5.0/highlight.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.10/codemirror.min.js"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.10/codemirror.min.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.10/mode/yaml/yaml.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.10/addon/edit/closebrackets.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.10/addon/edit/matchbrackets.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.10/addon/comment/comment.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.10/addon/fold/foldcode.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.10/addon/fold/foldgutter.min.js"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.10/addon/fold/foldgutter.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+  <script>hljs.highlightAll();</script>
+  <style>
+    .CodeMirror {
+      height: auto;
+      border: 1px solid #D1D5DB;
+      border-radius: 0.375rem;
+    }
+
+    .copy-icon {
+      cursor: pointer;
+      color: #4A5568;
+      /* Text-gray-700 */
+      transition: color 0.3s;
+      position: absolute;
+      top: 0.5rem;
+      right: 0.5rem;
+    }
+
+    .copy-icon:hover {
+      color: #2B6CB0;
+      /* Blue-700 */
+    }
+
+    .relative {
+      position: relative;
+    }
+
+    .popup {
+      visibility: hidden;
+      min-width: 200px;
+      background-color: #333;
+      color: #fff;
+      text-align: center;
+      border-radius: 5px;
+      padding: 8px 16px;
+      position: fixed;
+      z-index: 1;
+      bottom: 30px;
+      left: 50%;
+      transform: translateX(-50%);
+    }
+
+    .popup.show {
+      visibility: visible;
+    }
+
+    .error-message {
+      color: #EF4444;
+      /* Red-500 */
+      background-color: #FEF2F2;
+      /* Red-50 */
+      border: 1px solid #FCA5A5;
+      /* Red-300 */
+      border-radius: 0.375rem;
+      /* Rounded-md */
+      padding: 8px 16px;
+      margin-top: 1rem;
+      white-space: pre-wrap;
+      /* Preserve whitespace formatting */
+    }
+  </style>
+</head>
+
+<body class="bg-gray-100 min-h-screen flex items-center justify-center p-6">
+
+  <div class="bg-white shadow-lg rounded-lg p-6 max-w-4xl w-full">
+    <h1 class="text-2xl font-bold mb-4 text-center">Merge YAML Files</h1>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+      <textarea id="yaml1" rows="10" class="border border-gray-300 p-2 rounded-lg w-full hidden"
+        placeholder="YAML File 1">
+# YAML File 1
+name: Example
+age: 30
+details:
+  hobby: Reading
+  location: USA
+      </textarea>
+
+      <textarea id="yaml2" rows="10" class="border border-gray-300 p-2 rounded-lg w-full hidden"
+        placeholder="YAML File 2">
+# YAML File 2
+age: 25
+details:
+  hobby: Coding
+  profession: Developer
+      </textarea>
+    </div>
+
+    <h2 class="text-xl font-semibold mt-6">Merged YAML</h2>
+    <div class="relative">
+      <pre><code id="mergedYaml" class="language-yaml border border-gray-300 p-4 rounded-lg bg-gray-50 mt-2 whitespace-pre-wrap"></code></pre>
+      <i id="copyIcon" class="copy-icon fas fa-copy"></i>
+    </div>
+    <div id="errorMessage" class="error-message hidden"></div>
+  </div>
+
+  <div id="popup" class="popup">Merged YAML copied to clipboard!</div>
+
+  <script>
+    const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
+    const toggleCommentKey = isMac ? 'Cmd-/' : 'Ctrl-/';
+
+    const editor1 = CodeMirror.fromTextArea(document.getElementById('yaml1'), {
+      mode: 'yaml',
+      lineNumbers: true,
+      matchBrackets: true,
+      autoCloseBrackets: true,
+      theme: 'default',
+      extraKeys: { [toggleCommentKey]: 'toggleComment' }
+    });
+
+    const editor2 = CodeMirror.fromTextArea(document.getElementById('yaml2'), {
+      mode: 'yaml',
+      lineNumbers: true,
+      matchBrackets: true,
+      autoCloseBrackets: true,
+      theme: 'default',
+      extraKeys: { [toggleCommentKey]: 'toggleComment' }
+    });
+
+    let mergeTimeout;
+
+    const mergeYAML = () => {
+      try {
+        const yaml1 = editor1.getValue();
+        const yaml2 = editor2.getValue();
+
+        const obj1 = jsyaml.load(yaml1) || {}; // handle empty or invalid YAML
+        const obj2 = jsyaml.load(yaml2) || {}; // handle empty or invalid YAML
+
+        const mergedObj = _.merge({}, obj1, obj2);
+        const mergedYaml = jsyaml.dump(mergedObj);
+
+        const mergedYamlElement = document.getElementById('mergedYaml');
+        mergedYamlElement.textContent = mergedYaml;
+        hljs.highlightElement(mergedYamlElement);
+
+        document.getElementById('errorMessage').classList.add('hidden'); // hide error message
+        document.getElementById('errorMessage').textContent = ''; // clear any previous error message
+      } catch (error) {
+        document.getElementById('errorMessage').classList.remove('hidden'); // show error message
+        // Replace tabs with spaces for indentation in error message
+        const errorMessage = error.message.replace(/\t/g, '  ');
+        document.getElementById('errorMessage').textContent = `An error occurred while merging the YAML files:\n\n${errorMessage}\n\nPlease check your YAML syntax.`;
+      }
+    };
+
+    const debounceMergeYAML = () => {
+      clearTimeout(mergeTimeout);
+      mergeTimeout = setTimeout(mergeYAML, 500); // delay of 500ms
+    };
+
+    editor1.on('change', debounceMergeYAML);
+    editor2.on('change', debounceMergeYAML);
+
+    document.getElementById('copyIcon').addEventListener('click', function () {
+      const mergedYamlElement = document.getElementById('mergedYaml');
+      const mergedYamlText = mergedYamlElement.textContent;
+
+      navigator.clipboard.writeText(mergedYamlText).then(function () {
+        const popup = document.getElementById('popup');
+        popup.classList.add('show');
+        setTimeout(() => popup.classList.remove('show'), 3000);
+      }, function (err) {
+        console.error('Could not copy text: ', err);
+      });
+    });
+
+    // Initial merge on page load
+    mergeYAML();
+  </script>
+
+</body>
+
+</html>
